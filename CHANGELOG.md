@@ -6,14 +6,23 @@ may change configuration, the database schema, or the API.
 
 ## [Unreleased]
 
-- Worker setup uses port 8765 when the coordinator address has no port, and
-  when a loopback address is refused it points to the LAN address where this
-  machine's coordinator is listening.
+## v0.1.0-alpha.2
+
+- Linux and macOS releases include an `install.sh` for first-time installs.
+  It verifies the signed archive checksums and installs Transcoop in `~/.local/bin`.
+- Official binaries can check for a new release with `transcoop update --check`
+  and install it locally with `transcoop update`. Release archives now ship
+  with an Ed25519 signature for their SHA-256 checksums.
+- To upgrade from v0.1.0-alpha.1, replace the executable manually once. The
+  new binary can install future signed releases with `transcoop update`.
 
 ## v0.1.0-alpha.1
 
 First public alpha.
 
+- Worker setup uses port 8765 when the coordinator address has no port, and
+  when a loopback address is refused it points to the LAN address where this
+  machine's coordinator is listening.
 - Coordinator with a SQLite job queue, HTTP API (`/api`), and embedded browser
   console: dashboard, queue, workers, devices, job import, and folder-based job
   creation with installed HandBrake presets.

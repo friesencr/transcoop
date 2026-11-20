@@ -18,11 +18,22 @@ jobs:
       - run: go test ./...
       - name: Vulnerability scan
         run: go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 ./...
-      - name: Build archives
+      - name: Build archives and installer
         env:
           VERSION: ${{ github.ref_name }}
+          UPDATE_PUBLIC_KEY: ${{ vars.TRANSCOOP_UPDATE_PUBLIC_KEY }}
         run: |
           set -euo pipefail
+          number='(0|[1-9][0-9]*)'
+          pre="($number|[0-9]*[A-Za-z-][0-9A-Za-z-]*)"
+          build='[0-9A-Za-z-]+'
+          pattern="^v$number\.$number\.$number(-$pre(\.$pre)*)?(\+$build(\.$build)*)?$"
+          if [[ ! "$VERSION" =~ $pattern ]]; then
+            echo "Expected a semantic version tag" >&2
+            exit 1
+          fi
+          : "${UPDATE_PUBLIC_KEY:?configure TRANSCOOP_UPDATE_PUBLIC_KEY before tagging}"
+          [[ "$UPDATE_PUBLIC_KEY" =~ ^[A-Za-z0-9+/]+=*$ ]] || { echo "Expected a base64 public key" >&2; exit 1; }
           mkdir -p dist
           for target in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64 windows/arm64; do
             os=${target%/*}; arch=${target#*/}
@@ -30,7 +41,7 @@ jobs:
             ext=""; [ "$os" = windows ] && ext=".exe"
             mkdir -p "build/$name"
             CGO_ENABLED=0 GOOS=$os GOARCH=$arch go build -trimpath \
-              -ldflags "-s -w -X main.version=${VERSION}" \
+              -ldflags "-s -w -X main.version=${VERSION} -X github.com/friesencr/transcoop/internal/update.PublicKey=${UPDATE_PUBLIC_KEY}" \
               -o "build/$name/transcoop$ext" ./cmd/transcoop
             cp LICENSE README.md "build/$name/"
             if [ "$os" = windows ]; then
@@ -39,12 +50,34 @@ jobs:
               tar -C build -czf "dist/$name.tar.gz" "$name"
             fi
           done
-          (cd dist && sha256sum * > SHA256SUMS)
+          sed -e "s|@TRANSCOOP_VERSION@|$VERSION|g" \
+              -e "s|@TRANSCOOP_UPDATE_PUBLIC_KEY@|$UPDATE_PUBLIC_KEY|g" \
+              scripts/install.sh > dist/install.sh
+          sh -n dist/install.sh
+          (cd dist && sha256sum *.tar.gz *.zip install.sh > SHA256SUMS)
+      - name: Sign and verify release checksums
+        env:
+          SIGNING_KEY: ${{ secrets.TRANSCOOP_UPDATE_SIGNING_KEY }}
+          UPDATE_PUBLIC_KEY: ${{ vars.TRANSCOOP_UPDATE_PUBLIC_KEY }}
+        run: |
+          set -euo pipefail
+          umask 077
+          key=$(mktemp)
+          trap 'rm -f "$key"' EXIT
+          printf '%s\n' "${SIGNING_KEY:?configure TRANSCOOP_UPDATE_SIGNING_KEY before tagging}" > "$key"
+          unset SIGNING_KEY
+          openssl pkey -in "$key" -text_pub -noout | grep -iq '^ED25519 Public-Key:'
+          actual=$(openssl pkey -in "$key" -pubout -outform DER | base64 -w0)
+          test "$actual" = "$UPDATE_PUBLIC_KEY" || { echo "Signing key does not match embedded public key" >&2; exit 1; }
+          openssl pkeyutl -sign -rawin -inkey "$key" -in dist/SHA256SUMS -out dist/SHA256SUMS.sig
+          test "$(wc -c < dist/SHA256SUMS.sig)" -eq 64
+          openssl pkeyutl -verify -rawin -pubin -inkey <(openssl pkey -in "$key" -pubout) \
+            -in dist/SHA256SUMS -sigfile dist/SHA256SUMS.sig
       - name: Publish GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ github.ref_name }}
         run: |
           prerelease=""
-          case "$VERSION" in *-*) prerelease="--prerelease" ;; esac
+          case "${VERSION%%+*}" in *-*) prerelease="--prerelease" ;; esac
           gh release create "$VERSION" dist/* --title "$VERSION" --generate-notes $prerelease

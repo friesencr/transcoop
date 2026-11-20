@@ -9,6 +9,7 @@ require (
 	github.com/pelletier/go-toml/v2 v2.2.3
 	github.com/shirou/gopsutil/v4 v4.26.8
 	github.com/winfsp/cgofuse v1.6.0
+	golang.org/x/mod v0.38.0
 	golang.org/x/sys v0.47.0
 	modernc.org/sqlite v1.59.0
 )

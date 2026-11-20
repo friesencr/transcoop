@@ -1,7 +1,7 @@
 name: CI
 on:
   push:
-    branches: [main]
+    branches: [master, main]
   pull_request:
 
 permissions:
@@ -47,6 +47,13 @@ jobs:
       - name: Test
         if: runner.os == 'Windows'
         run: go test ./...
+      - name: Test signed binary upgrade
+        env:
+          TRANSCOOP_UPDATE_INTEGRATION: '1'
+        run: go test -count=1 -run TestPackagedUpgrade -v ./internal/update
+      - name: Test first install from a signed release
+        if: runner.os != 'Windows'
+        run: python3 scripts/test-install.py
       - name: Build
         shell: bash
         run: CGO_ENABLED=0 go build ./cmd/transcoop

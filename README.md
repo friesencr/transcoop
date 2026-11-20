@@ -14,13 +14,37 @@ database and serves a browser console. Other machines run **workers**: they pair
 with the coordinator, claim jobs their HandBrakeCLI can encode, report progress,
 and hand finished files back. A single machine can be both.
 
-[Install](#install) · [First setup](#first-setup) · [Add your first job](#add-jobs-in-the-browser) · [Configuration reference](docs/configuration.md)
+[Install](#install) · [First setup](#first-setup) · [Add your first job](#add-jobs-in-the-browser) · [Update](#update) · [Configuration reference](docs/configuration.md)
 
 ## Install
 
-The coordinator and worker use the same `transcoop` executable. To try the
-current source, clone this repository or extract **Code → Download ZIP**. Open a
-terminal in the directory containing `go.mod`. You need Go 1.27.4 or later.
+Download **v0.1.0-alpha.1** for your machine. The coordinator and worker use
+the same executable. [Release notes and checksums](https://github.com/friesencr/transcoop/releases/tag/v0.1.0-alpha.1)
+
+| Platform | Intel or AMD (x64) | ARM64 |
+| --- | --- | --- |
+| Linux | [Linux x64](https://github.com/friesencr/transcoop/releases/download/v0.1.0-alpha.1/transcoop_v0.1.0-alpha.1_linux_amd64.tar.gz) | [Linux ARM64](https://github.com/friesencr/transcoop/releases/download/v0.1.0-alpha.1/transcoop_v0.1.0-alpha.1_linux_arm64.tar.gz) |
+| macOS | [Intel Mac](https://github.com/friesencr/transcoop/releases/download/v0.1.0-alpha.1/transcoop_v0.1.0-alpha.1_darwin_amd64.tar.gz) | [Apple Silicon Mac](https://github.com/friesencr/transcoop/releases/download/v0.1.0-alpha.1/transcoop_v0.1.0-alpha.1_darwin_arm64.tar.gz) |
+| Windows | [Windows x64](https://github.com/friesencr/transcoop/releases/download/v0.1.0-alpha.1/transcoop_v0.1.0-alpha.1_windows_amd64.zip) | [Windows ARM64](https://github.com/friesencr/transcoop/releases/download/v0.1.0-alpha.1/transcoop_v0.1.0-alpha.1_windows_arm64.zip) |
+
+Extract the archive. On Linux or macOS, open a terminal in the extracted
+directory and run `./transcoop version`. On Windows, open PowerShell there
+and run `.\transcoop.exe version`. It should print `transcoop` followed by the
+tag of the release you downloaded.
+Move the executable to a directory on your `PATH` to run `transcoop` from anywhere.
+
+Install **HandBrakeCLI** on each encoding worker. Also install it on the
+coordinator for **Add jobs** and **Watch**, or on a machine that scans media
+with the TUI. Run `HandBrakeCLI --version` to check it. If it lives outside
+your path, set its location for that role.
+[HandBrakeCLI downloads](https://handbrake.fr/downloads2.php) · [Set the HandBrakeCLI path](docs/configuration.md#handbrakecli-location)
+
+Continue to [First setup](#first-setup) to pair your machines.
+
+### Build from source
+
+To try the current source, clone this repository or extract **Code → Download ZIP**.
+Open a terminal in the directory containing `go.mod`. You need Go 1.27.4 or later.
 [Download Go](https://go.dev/dl/)
 
 **Linux or macOS** (sh, Bash or Zsh)
@@ -46,17 +70,31 @@ These commands put Transcoop on your path for the current terminal. For future
 terminals, add the same directory to your shell profile or Windows user `Path`.
 Use the same Transcoop version on each machine.
 
-For a version with published binaries, extract the archive for your OS and
-processor from that release’s **Assets** and put the executable in a directory
-on your path. Choose `amd64` for Intel/AMD x64 or `arm64` for ARM64, including
-Apple Silicon. macOS archives use `darwin` in the filename.
-[Releases](https://github.com/friesencr/transcoop/releases)
+## Update
 
-Install **HandBrakeCLI** on each encoding worker. Also install it on the
-coordinator for **Add jobs** and **Watch**, or on a machine that scans media
-with the TUI. Run `HandBrakeCLI --version` to check it. If it lives outside
-your path, set its location for that role.
-[HandBrakeCLI downloads](https://handbrake.fr/downloads2.php) · [Set the HandBrakeCLI path](docs/configuration.md#handbrakecli-location)
+**Starting from v0.1.0-alpha.1?** That release predates the updater. When the
+first release with `transcoop update` is published, download its archive and
+replace your executable manually once. Keep the existing executable path so
+your service uses the new version. [GitHub releases](https://github.com/friesencr/transcoop/releases)
+
+With an updater-enabled release, run `transcoop update --check` on any machine
+to see the installed and available versions. Stable builds follow stable
+releases. Alpha, beta and other prerelease builds also see newer prereleases.
+
+1. Pause the queue and let active jobs finish. Stop your workers and coordinator,
+   then back up the coordinator's SQLite database and its accompanying files.
+2. Run `transcoop update` on the coordinator and each worker, using an account
+   that can write to the executable's directory. Transcoop verifies the signed
+   checksums and replaces the local executable. On Windows, keep the terminal
+   open until the helper prints **Installed** or reports an error.
+3. Run `transcoop version` on each machine. Start the coordinator, start the
+   workers, confirm their versions in the browser console, and resume the queue.
+   Existing configuration and pairing credentials carry over.
+
+For a source build, rebuild from the desired tag. For a FUSE worker, rebuild
+both `transcoop` and `transcoop-fs` from that tag. The updater asks for a manual
+upgrade when the worker uses FUSE or the helper is beside Transcoop or on
+your `PATH`. [FUSE build instructions](docs/filesystem.md)
 
 ## First setup
 
@@ -817,6 +855,9 @@ Recovery. Do not rely on this mode for important work. See
 [filesystem setup, configuration, and validation gates](docs/filesystem.md).
 
 ## Development
+
+Maintainers can find the one-time signing key setup and release procedure in
+the [release guide](docs/releases.md).
 
 Generated templ Go files are checked in. The generator is pinned:
 

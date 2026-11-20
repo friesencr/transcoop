@@ -23,6 +23,7 @@ import (
 
 	"github.com/friesencr/transcoop/internal/farm"
 	"github.com/friesencr/transcoop/internal/review"
+	"github.com/friesencr/transcoop/internal/update"
 	"github.com/friesencr/transcoop/internal/watch"
 	"github.com/friesencr/transcoop/internal/webui"
 )
@@ -69,6 +70,7 @@ func usage() {
   jobs                     List jobs
   retry JOB_ID             Retry a failed or interrupted job
   tui [options] INPUT      Review a queue or folder
+  update [--check]         Check for or install a signed release
   version                  Print the version
 
 All commands accept -config FILE. Explicit flags override TOML settings.
@@ -106,6 +108,28 @@ func run(ctx context.Context, args []string) (runErr error) {
 	if len(args) == 0 {
 		usage()
 		return nil
+	}
+	if args[0] == "update" {
+		fs := flag.NewFlagSet("update", flag.ContinueOnError)
+		check := fs.Bool("check", false, "show the available release without installing it")
+		if err := fs.Parse(args[1:]); err != nil {
+			if errors.Is(err, flag.ErrHelp) {
+				return nil
+			}
+			return err
+		}
+		if fs.NArg() != 0 {
+			return errors.New("usage: transcoop update [--check]")
+		}
+		fuse := false
+		if !*check {
+			cfg, err := config.Load(path, explicit)
+			if err != nil {
+				return err
+			}
+			fuse = cfg.Worker.Mode != nil && *cfg.Worker.Mode == "fuse"
+		}
+		return update.Run(ctx, buildVersion(), *check, fuse)
 	}
 	if args[0] == "config" {
 		return configCommand(path, args[1:])
