@@ -18,14 +18,25 @@ and hand finished files back. A single machine can be both.
 
 ## Install
 
-Download **v0.1.0-alpha.1** for your machine. The coordinator and worker use
-the same executable. [Release notes and checksums](https://github.com/friesencr/transcoop/releases/tag/v0.1.0-alpha.1)
+**Linux and macOS** — Install **v0.1.0-alpha.2** for the current user and start guided setup.
+
+```sh
+curl -fsSL --proto '=https' --proto-redir '=https' 'https://github.com/friesencr/transcoop/releases/download/v0.1.0-alpha.2/install.sh' | sh
+"$HOME/.local/bin/transcoop" setup
+```
+
+The installer uses curl, tar and OpenSSL 3 to verify and install the executable
+in `~/.local/bin`. On macOS it also finds Homebrew's `openssl@3`. Setup lets
+you choose coordinator or worker and offers a user service on Linux with systemd.
+
+**Windows and manual installs** — Download the archive for your machine. The
+coordinator and worker use the same executable. [Release notes and signed checksums](https://github.com/friesencr/transcoop/releases/tag/v0.1.0-alpha.2)
 
 | Platform | Intel or AMD (x64) | ARM64 |
 | --- | --- | --- |
-| Linux | [Linux x64](https://github.com/friesencr/transcoop/releases/download/v0.1.0-alpha.1/transcoop_v0.1.0-alpha.1_linux_amd64.tar.gz) | [Linux ARM64](https://github.com/friesencr/transcoop/releases/download/v0.1.0-alpha.1/transcoop_v0.1.0-alpha.1_linux_arm64.tar.gz) |
-| macOS | [Intel Mac](https://github.com/friesencr/transcoop/releases/download/v0.1.0-alpha.1/transcoop_v0.1.0-alpha.1_darwin_amd64.tar.gz) | [Apple Silicon Mac](https://github.com/friesencr/transcoop/releases/download/v0.1.0-alpha.1/transcoop_v0.1.0-alpha.1_darwin_arm64.tar.gz) |
-| Windows | [Windows x64](https://github.com/friesencr/transcoop/releases/download/v0.1.0-alpha.1/transcoop_v0.1.0-alpha.1_windows_amd64.zip) | [Windows ARM64](https://github.com/friesencr/transcoop/releases/download/v0.1.0-alpha.1/transcoop_v0.1.0-alpha.1_windows_arm64.zip) |
+| Linux | [Linux x64](https://github.com/friesencr/transcoop/releases/download/v0.1.0-alpha.2/transcoop_v0.1.0-alpha.2_linux_amd64.tar.gz) | [Linux ARM64](https://github.com/friesencr/transcoop/releases/download/v0.1.0-alpha.2/transcoop_v0.1.0-alpha.2_linux_arm64.tar.gz) |
+| macOS | [Intel Mac](https://github.com/friesencr/transcoop/releases/download/v0.1.0-alpha.2/transcoop_v0.1.0-alpha.2_darwin_amd64.tar.gz) | [Apple Silicon Mac](https://github.com/friesencr/transcoop/releases/download/v0.1.0-alpha.2/transcoop_v0.1.0-alpha.2_darwin_arm64.tar.gz) |
+| Windows | [Windows x64](https://github.com/friesencr/transcoop/releases/download/v0.1.0-alpha.2/transcoop_v0.1.0-alpha.2_windows_amd64.zip) | [Windows ARM64](https://github.com/friesencr/transcoop/releases/download/v0.1.0-alpha.2/transcoop_v0.1.0-alpha.2_windows_arm64.zip) |
 
 Extract the archive. On Linux or macOS, open a terminal in the extracted
 directory and run `./transcoop version`. On Windows, open PowerShell there
@@ -72,10 +83,10 @@ Use the same Transcoop version on each machine.
 
 ## Update
 
-**Starting from v0.1.0-alpha.1?** That release predates the updater. When the
-first release with `transcoop update` is published, download its archive and
-replace your executable manually once. Keep the existing executable path so
-your service uses the new version. [GitHub releases](https://github.com/friesencr/transcoop/releases)
+**Starting from v0.1.0-alpha.1?** That release predates the updater. Follow
+the farm shutdown and backup steps below, then download the v0.1.0-alpha.2
+archive for each machine and replace its executable at the same path. Start
+the farm again and use `transcoop update` for subsequent releases. [GitHub releases](https://github.com/friesencr/transcoop/releases)
 
 With an updater-enabled release, run `transcoop update --check` on any machine
 to see the installed and available versions. Stable builds follow stable
