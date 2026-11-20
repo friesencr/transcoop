@@ -1,21 +1,37 @@
 $ErrorActionPreference = 'Stop'
 $target = $env:TRANSCOOP_TARGET
 $stage = $env:TRANSCOOP_STAGE
-$work = Split-Path -LiteralPath $stage
-$backup = Join-Path $work 'previous.exe'
+$work = [IO.Path]::GetDirectoryName($stage)
+$backup = [IO.Path]::Combine($work, 'previous.exe')
 $lock = $null
 $keep = $false
 $failed = $false
+
+# The invoking shell may supply a PSModulePath for a different PowerShell version.
+function Get-UpdateHash([string]$path) {
+    $sha = [Security.Cryptography.SHA256]::Create()
+    try {
+        $stream = [IO.File]::OpenRead($path)
+        try { return [BitConverter]::ToString($sha.ComputeHash($stream)).Replace('-', '') }
+        finally { $stream.Dispose() }
+    } finally { $sha.Dispose() }
+}
+
 try {
-    $parent = Get-Process -Id $env:TRANSCOOP_PARENT_PID -ErrorAction SilentlyContinue
-    if ($parent -and !$parent.WaitForExit(15000)) { throw 'Timed out waiting for the update command to exit.' }
+    try { $parent = [Diagnostics.Process]::GetProcessById([int]$env:TRANSCOOP_PARENT_PID) }
+    catch [ArgumentException] { $parent = $null } # Already exited.
+    if ($parent) {
+        try {
+            if (!$parent.WaitForExit(15000)) { throw 'Timed out waiting for the update command to exit.' }
+        } finally { $parent.Dispose() }
+    }
     $lock = [IO.File]::Open(($target + '.update.lock'), 'Open', 'ReadWrite', 'ReadWrite')
     $lock.Lock(0, 1)
     # Another updater may have finished between the launcher exiting and this lock.
-    if ((Get-FileHash -LiteralPath $target).Hash -ne $env:TRANSCOOP_ORIGINAL_HASH) {
+    if ((Get-UpdateHash $target) -ne $env:TRANSCOOP_ORIGINAL_HASH) {
         throw 'The installed executable changed while waiting. Run update again.'
     }
-    if ((Get-FileHash -LiteralPath $stage).Hash -ne $env:TRANSCOOP_STAGE_HASH) {
+    if ((Get-UpdateHash $stage) -ne $env:TRANSCOOP_STAGE_HASH) {
         throw 'The verified replacement changed while waiting.'
     }
     try {
@@ -24,7 +40,7 @@ try {
         throw ('Could not replace {0}. Stop running Transcoop workers or coordinators and retry. {1}' -f $target, $_)
     }
     $keep = $true
-    $info = New-Object System.Diagnostics.ProcessStartInfo
+    $info = [Diagnostics.ProcessStartInfo]::new()
     $info.FileName = $target
     $info.Arguments = 'version'
     $info.UseShellExecute = $false
@@ -51,7 +67,7 @@ try {
     if ([IO.File]::Exists($backup)) {
         try {
             if ([IO.File]::Exists($target)) {
-                [IO.File]::Replace($backup, $target, (Join-Path $work 'rejected.exe'))
+                [IO.File]::Replace($backup, $target, [IO.Path]::Combine($work, 'rejected.exe'))
             } else {
                 [IO.File]::Move($backup, $target)
             }
@@ -64,6 +80,6 @@ try {
     }
 } finally {
     if ($lock) { $lock.Dispose() }
-    if (!$keep) { Remove-Item -LiteralPath $work -Recurse -Force }
+    if (!$keep) { [IO.Directory]::Delete($work, $true) }
 }
 if ($failed) { exit 1 }
