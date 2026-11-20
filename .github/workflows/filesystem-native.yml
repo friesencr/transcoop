@@ -1,0 +1,31 @@
+name: Native filesystem gate
+on:
+  workflow_dispatch:
+jobs:
+  native:
+    strategy:
+      fail-fast: false
+      matrix:
+        platform: [linux, macOS, windows]
+    # These runners must have their native driver enabled, Go, Python and HandBrakeCLI.
+    runs-on: [self-hosted, '${{ matrix.platform }}', transcoop-fuse]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build coordinated binaries
+        run: python scripts/build-native.py
+      - name: Test and exercise native mount with four encodes
+        shell: bash
+        run: |
+          export PATH="$PWD/bin:$PATH"
+          export TRANSCOOP_FUSE_NATIVE=1
+          if [[ "$RUNNER_OS" == "Windows" ]]; then
+            export CGO_ENABLED=0
+            go test ./...
+          else
+            go test -race ./...
+          fi
+          go test -tags fuse ./cmd/transcoop-fs
+      - uses: actions/upload-artifact@v4
+        with:
+          name: transcoop-${{ matrix.platform }}
+          path: bin/*.zip

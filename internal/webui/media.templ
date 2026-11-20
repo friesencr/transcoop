@@ -1,0 +1,169 @@
+package webui
+
+import (
+	"fmt"
+	"strings"
+)
+
+templ mediaView(d mediaData) {
+	@layout("Add jobs", d.CSRF) {
+		<div class="page-head"><h1>Add jobs</h1></div>
+		<p class="lead">Pick a video or folder on the coordinator, an output folder and a preset. Shared storage must be mounted on the coordinator. Have a HandBrake queue already? <a href="/import">Import it</a>.</p>
+		if d.Message != "" {
+			<p class="alert" role="alert">{ d.Message }</p>
+		}
+		<div class="add-layout">
+			<section class="card browser" aria-label="Coordinator files">
+				<form class="row" action="/add" method="get">
+					<label for="browse-path" class="grow">Folder<input id="browse-path" name="path" value={ d.Path } required/></label>
+					<input type="hidden" name="source" value={ d.Source }/>
+					<input type="hidden" name="output" value={ d.Output }/>
+					<input type="hidden" name="preset" value={ d.Preset }/>
+					if d.Recursive {
+						<input type="hidden" name="recursive" value="on"/>
+					}
+					<button>Go</button>
+				</form>
+				if d.Parent != "" {
+					<nav class="crumbs" aria-label="Folder path">
+						for i, c := range d.Crumbs {
+							if i > 1 {
+								<span>/</span>
+							}
+							<a href={ templ.SafeURL(c.URL) }>{ c.Name }</a>
+						}
+					</nav>
+					<div class="row folder-actions">
+						<a class="btn small" href={ templ.SafeURL(d.Parent) }>↑ Up</a>
+						<a class="btn small" href={ templ.SafeURL(d.SelectSource) }>Use folder as input</a>
+						<a class="btn small" href={ templ.SafeURL(d.SelectOutput) }>Use folder as output</a>
+					</div>
+					<ul class="files">
+						for _, item := range d.Items {
+							if item.Directory {
+								<li class={ "dir", templ.KV("is-chosen", item.Chosen) }>
+									<a class="name" href={ templ.SafeURL(item.Open) }>{ item.Name + "/" }</a>
+									<a class="act" href={ templ.SafeURL(item.Select) } aria-label={ "Use folder " + item.Name + " as input" }>use as input</a>
+								</li>
+							} else {
+								<li class={ templ.KV("is-chosen", item.Chosen) }>
+									<a class="name" href={ templ.SafeURL(item.Select) } aria-label={ "Select video " + item.Name }>{ item.Name }</a>
+								</li>
+							}
+						}
+						if len(d.Items) == 0 {
+							<li class="empty">No videos or folders here.</li>
+						}
+					</ul>
+				}
+			</section>
+			<div class="side">
+			<form class="card media-settings stack" action="/add/preview" method="post" hx-post="/add/preview" hx-target="#media-preview" hx-swap="outerHTML" hx-indicator="#scan-progress" hx-disabled-elt="find button">
+				<h3>Encoding settings</h3>
+				<input type="hidden" name="csrf" value={ d.CSRF }/>
+				<label for="media-source">Input file or folder<input id="media-source" class="mono" name="source" value={ d.Source } required placeholder="/media/input"/></label>
+				<label for="media-output">Output folder<input id="media-output" class="mono" name="output" value={ d.Output } required placeholder="/media/encoded"/></label>
+				<label for="media-preset">
+					Preset
+					<select id="media-preset" name="preset" required>
+						if len(d.Custom) > 0 {
+							<optgroup label="Uploaded">
+								for _, name := range d.Custom {
+									<option value={ name } selected?={ name == d.Preset }>{ name }</option>
+								}
+							</optgroup>
+							<optgroup label="HandBrake">
+								for _, name := range d.Presets {
+									<option value={ name } selected?={ name == d.Preset }>{ name }</option>
+								}
+							</optgroup>
+						} else {
+							for _, name := range d.Presets {
+								<option value={ name } selected?={ name == d.Preset }>{ name }</option>
+							}
+						}
+					</select>
+				</label>
+				<label><input type="checkbox" name="recursive" checked?={ d.Recursive }/> Include subfolders</label>
+				<button class="primary" disabled?={ len(d.Presets)+len(d.Custom) == 0 }>Preview jobs</button>
+				<p id="scan-progress" class="htmx-indicator meta" role="status">Scanning media… large folders can take several minutes.</p>
+				<p class="meta"><a href={ templ.SafeURL(watchLink(d)) }>Watch this folder instead</a> to queue new videos as they arrive.</p>
+				<p class="meta">Up to 500 files per batch. Title 1 with the preset’s audio and subtitle rules. Subfolder paths are kept; existing outputs are never replaced.</p>
+			</form>
+			if d.CanUpload {
+				<section class="card presets" aria-label="Custom presets">
+					<h3>Custom presets</h3>
+					<p class="meta">In HandBrake, choose Presets → Export, then upload the .json file. Workers receive the preset’s settings with each job; nothing needs installing on them.</p>
+					<form class="row" action="/add/presets" method="post" enctype="multipart/form-data">
+						<input type="hidden" name="csrf" value={ d.CSRF }/>
+						@presetFormState(d)
+						<label class="grow">Preset file<input type="file" name="preset" accept=".json,application/json" required/></label>
+						<button>Upload</button>
+					</form>
+					if len(d.Uploaded) > 0 {
+						<ul class="preset-files">
+							for _, f := range d.Uploaded {
+								<li>
+									<span class="names">
+										for _, name := range f.Names {
+											<span class="tag">{ name }</span>
+										}
+									</span>
+									<form action="/add/presets/delete" method="post" data-confirm={ "Remove " + strings.Join(f.Names, ", ") + "? Jobs already queued keep their settings." }>
+										<input type="hidden" name="csrf" value={ d.CSRF }/>
+										<input type="hidden" name="id" value={ f.ID }/>
+										@presetFormState(d)
+										<button class="danger small">Remove</button>
+									</form>
+								</li>
+							}
+						</ul>
+					}
+				</section>
+			}
+			</div>
+		</div>
+		@mediaPreview(d.CSRF, nil, 0, "")
+	}
+}
+
+// presetFormState keeps the Add jobs selections across preset uploads.
+templ presetFormState(d mediaData) {
+	<input type="hidden" name="path" value={ d.Path }/>
+	<input type="hidden" name="source" value={ d.Source }/>
+	<input type="hidden" name="output" value={ d.Output }/>
+	if d.Recursive {
+		<input type="hidden" name="recursive" value="on"/>
+	}
+}
+
+templ mediaPreviewPage(csrf string, draft *mediaDraft, count int, message string) {
+	@layout("Preview jobs", csrf) {
+		<div class="page-head">
+			<div>
+				<p class="eyebrow"><a href="/add">add jobs</a> / preview</p>
+				<h1>Preview jobs</h1>
+			</div>
+		</div>
+		@mediaPreview(csrf, draft, count, message)
+	}
+}
+
+templ mediaPreview(csrf string, draft *mediaDraft, count int, message string) {
+	<section id="media-preview" aria-live="polite">
+		if message != "" {
+			<p class="alert" role="alert">{ message }</p>
+		}
+		if draft != nil {
+			<h2>Review jobs</h2>
+			<p class="count">{ fmt.Sprintf("%d jobs · %d new · %d duplicates", len(draft.Jobs), count, len(draft.Jobs)-count) }</p>
+			@previewTable(draft.Jobs)
+			<form class="submit-row" action="/add/submit" method="post">
+				<input type="hidden" name="csrf" value={ csrf }/>
+				<input type="hidden" name="draft" value={ draft.ID }/>
+				<button class="primary">Add jobs to queue</button>
+				<span class="meta">Queue conflicts are checked again on submit.</span>
+			</form>
+		}
+	</section>
+}

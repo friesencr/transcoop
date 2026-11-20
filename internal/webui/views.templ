@@ -1,0 +1,590 @@
+package webui
+
+import (
+	"fmt"
+	"strings"
+)
+import "github.com/friesencr/transcoop/internal/farm"
+
+templ layout(title string, csrf string) {
+	<!DOCTYPE html>
+	<html lang="en">
+		<head>
+			<meta charset="utf-8"/>
+			<meta name="viewport" content="width=device-width,initial-scale=1"/>
+			<meta name="htmx-config" content='{"allowEval":false,"allowScriptTags":false,"selfRequestsOnly":true}'/>
+			<title>{ title } · transcoop</title>
+			<script src="/assets/theme.js"></script>
+			<link rel="preload" href="/assets/jetbrains-mono.woff2" as="font" type="font/woff2" crossorigin/>
+			<link rel="stylesheet" href="/assets/style.css"/>
+			<script src="/assets/htmx-2.0.4.min.js" defer></script>
+			<script src="/assets/ui.js" defer></script>
+		</head>
+		<body>
+			<header class="top">
+				<a class="brand" href="/">transcoop<span>/</span></a>
+				if csrf != "" {
+					<nav class="nav" aria-label="Main">
+						for _, n := range navItems {
+							<a
+								href={ templ.SafeURL(n.Href) }
+								if navSection(title) == n.Href {
+									aria-current="page"
+								}
+							>{ n.Label }</a>
+						}
+					</nav>
+				}
+				<div class="top-actions">
+					<button type="button" class="ghost theme-btn" id="theme-toggle" title="Change theme (T)" hidden>theme</button>
+					if csrf != "" {
+						<form action="/logout" method="post">
+							<input type="hidden" name="csrf" value={ csrf }/>
+							<button class="ghost">Log out</button>
+						</form>
+					}
+				</div>
+			</header>
+			<main>
+				{ children... }
+			</main>
+			<footer>
+				<span>transcoop { versionFrom(ctx) }</span>
+				<span>local encoding farm · live view refreshes every 5s · <kbd>T</kbd> cycles themes</span>
+			</footer>
+		</body>
+	</html>
+}
+
+templ pairView(csrf, message string) {
+	@layout("Pair browser", "") {
+		<section class="login card">
+			<h1>Pair this browser</h1>
+			<p class="muted">On the coordinator, run <code>transcoop pair -role browser</code>, or ask a paired operator for a browser code from the Devices page. This browser is remembered for 30 days.</p>
+			if message != "" {
+				<p class="alert" role="alert">{ message }</p>
+			}
+			<form action="/pair" method="post" class="stack">
+				<input type="hidden" name="csrf" value={ csrf }/>
+				<label for="code">Pairing code<input id="code" name="code" class="code-input" autocomplete="one-time-code" maxlength="8" required autofocus/></label>
+				<label for="name">Device name<input id="name" name="name" value="My browser" maxlength="200" required/></label>
+				<button class="primary">Pair browser</button>
+			</form>
+		</section>
+	}
+}
+
+templ pageHead(d pageData) {
+	<div class="page-head">
+		<h1>{ d.Title }</h1>
+		<div class="queue-state">
+			<span class="label">queue</span>
+			@executionControls(d.CSRF, "", controlState(d.Controls, ""), d.Path)
+		</div>
+	</div>
+}
+
+templ page(d pageData) {
+	@layout(d.Title, d.CSRF) {
+		if d.Detail == nil {
+			@pageHead(d)
+		} else {
+			<div class="page-head">
+				<div>
+					<p class="eyebrow"><a href="/jobs">queue</a> / job #{ fmt.Sprint(d.Detail.Job.ID) }</p>
+					<h1 class="file-title">{ baseName(d.Detail.Job.Source) }</h1>
+				</div>
+			</div>
+		}
+		if d.Message != "" {
+			<p class="notice" role="status">{ d.Message }</p>
+		}
+		if d.Title == "Queue" {
+			<div class="toolbar">
+				<form class="filters" action="/jobs" method="get">
+					<label>Filename<input type="search" name="q" value={ d.Query } placeholder="Search paths"/></label>
+					<label>
+						Status
+						<select name="status">
+							<option value="">All statuses</option>
+							for _, status := range []string{"pending", "running", "succeeded", "failed", "interrupted"} {
+								<option value={ status } selected?={ status == d.Status }>{ status }</option>
+							}
+						</select>
+					</label>
+					<label>Worker<input name="worker" value={ d.Worker } placeholder="Any"/></label>
+					<button>Filter</button>
+					if d.Query != "" || d.Status != "" || d.Worker != "" {
+						<a class="btn ghost" href="/jobs">Reset</a>
+					}
+				</form>
+				<form action="/jobs/clear" method="post" data-confirm="Clear the queue? This permanently removes all pending and finished jobs and their history, across all filters. Running jobs and media files will be kept.">
+					<input type="hidden" name="csrf" value={ d.CSRF }/>
+					<button class="danger" title="Remove pending and finished jobs and their history. Running jobs and media files are kept.">Clear queue</button>
+				</form>
+			</div>
+		}
+		<div id="poll-status" role="status"></div>
+		@panels(d)
+	}
+}
+
+templ panels(d pageData) {
+	<section id="live" hx-get={ d.Path } hx-trigger="every 5s" hx-swap="outerHTML" aria-label="Live farm status">
+		for _, warning := range d.Warnings {
+			<p class="warning" role="alert">{ warning }</p>
+		}
+		if d.Detail != nil {
+			@detailView(d)
+		} else if d.Title == "Queue" {
+			<p class="count">{ fmt.Sprintf("%d jobs · page %d", d.Total, d.Page) }</p>
+			@jobTable(d.Rows)
+			if d.Previous != "" || d.Next != "" {
+				<nav class="pager" aria-label="Pagination">
+					if d.Previous != "" {
+						<a class="btn" href={ templ.SafeURL(d.Previous) }>← Previous</a>
+					}
+					if d.Next != "" {
+						<a class="btn" href={ templ.SafeURL(d.Next) }>Next →</a>
+					}
+				</nav>
+			}
+		} else {
+			if d.Title == "Dashboard" {
+				<div class="stats">
+					for _, status := range []string{"pending", "running", "succeeded", "failed", "interrupted"} {
+						<a class={ "stat card", "s-" + status } href={ templ.SafeURL("/jobs?status=" + status) }>
+							<strong>{ fmt.Sprint(d.Counts[status]) }</strong>
+							<span>{ status }</span>
+						</a>
+					}
+				</div>
+				<h2>Active encodes</h2>
+				if len(d.Active) == 0 {
+					<p class="empty">No active encodes. Add jobs or press play to start the queue.</p>
+				}
+				<div class="grid">
+					for _, v := range d.Active {
+						<article class="card encode">
+							@fileCell(v.Job, true)
+							<p class="meta">{ v.Worker } · { v.Encoder }</p>
+							@rowProgress(v)
+						</article>
+					}
+				</div>
+			}
+			<h2>Workers</h2>
+			@workerCards(d.Workers, d.CSRF, d.Controls, d.Ranks, d.Path)
+		}
+	</section>
+}
+
+templ fileCell(j farm.Job, link bool) {
+	<div class="file" title={ j.Source }>
+		if link {
+			<a href={ templ.SafeURL(jobURL(j.ID)) }>{ baseName(j.Source) }</a>
+		} else {
+			<strong>{ baseName(j.Source) }</strong>
+		}
+		<small>{ dirName(j.Source) }</small>
+	</div>
+}
+
+templ statusBadge(status string) {
+	<span class={ "badge", "s-" + strings.ToLower(status) }>{ status }</span>
+}
+
+templ when(t int64) {
+	if t == 0 {
+		<span class="muted">—</span>
+	} else {
+		<time datetime={ isoTime(t) } title={ exactTime(t) }>{ ago(t) }</time>
+	}
+}
+
+templ rowProgress(r jobRow) {
+	if r.Latest != nil && r.Latest.Fraction != nil {
+		<progress max="1" value={ fractionValue(r.Latest.Fraction) }>{ percent(r.Latest.Fraction) }</progress>
+		<p class="meta">
+			<strong>{ percent(r.Latest.Fraction) }</strong> · { fps(r.Latest.FPS) } fps · eta { etaText(r.Latest.ETA) }
+		</p>
+	} else {
+		<progress max="1"></progress>
+		<p class="meta">starting…</p>
+	}
+}
+
+templ jobTable(rows []jobRow) {
+	<div class="table-wrap">
+		<table class="jobs">
+			<thead><tr><th class="num">#</th><th>File</th><th>Status</th><th>Progress / result</th><th class="hide-sm">Worker</th><th class="hide-sm">Encoder</th></tr></thead>
+			<tbody>
+				for _, r := range rows {
+					<tr>
+						<td class="num"><a href={ templ.SafeURL(jobURL(r.ID)) }>{ fmt.Sprint(r.ID) }</a></td>
+						<td>@fileCell(r.Job, true)</td>
+						<td>@statusBadge(r.Status)</td>
+						<td class="result">
+							switch r.Status {
+								case "running":
+									@rowProgress(r)
+								case "succeeded":
+									<span class="meta">
+										if r.Took() != "" {
+											took { r.Took() } ·
+										}
+										{ byteSize(r.Src) } → { byteSize(r.Out) }
+										if c := sizeChange(r.Src, r.Out); c != "" {
+											<strong>{ c }</strong>
+										}
+									</span>
+								case "failed", "interrupted":
+									<span class="meta error" title={ r.Error }>{ firstLine(r.Error) }</span>
+								default:
+									<span class="meta">
+										queued · { byteSize(r.Src) }
+										if r.Attempts > 0 {
+											· attempt { fmt.Sprint(r.Attempts + 1) }
+										}
+									</span>
+							}
+						</td>
+						<td class="hide-sm mono">{ r.Worker }</td>
+						<td class="hide-sm"><span class="tag">{ r.Encoder }</span></td>
+					</tr>
+				}
+				if len(rows) == 0 {
+					<tr><td colspan="6" class="empty">No matching jobs.</td></tr>
+				}
+			</tbody>
+		</table>
+	</div>
+}
+
+templ workerCards(workers []farm.WorkerStatus, csrf string, controls map[string]string, ranks map[string]int, next string) {
+	if len(workers) == 0 {
+		<p class="empty">No worker reports yet. <a href="/devices">Create a worker pairing code</a>, then run <code>transcoop setup</code> on an encoding machine.</p>
+	}
+	<div class="grid">
+		for _, v := range workers {
+			<article class="card worker">
+				<div class="card-head">
+					<h3 title={ "Instance " + v.Instance }>{ v.Name }</h3>
+					@statusBadge(v.Presence())
+				</div>
+				<p class="meta">
+					{ v.Mode } storage · { v.Scheduler } scheduler
+					if v.Priority != "" {
+						· <span title="HandBrake process priority on this machine (worker.priority)">{ v.Priority } priority</span>
+					}
+				</p>
+				if v.DeviceID != "" {
+					<div class="worker-controls">
+						@executionControls(csrf, v.DeviceID, controlState(controls, v.DeviceID), next)
+						if controlState(controls, "") != "playing" {
+							<span class="meta">new jobs held by queue</span>
+						}
+					</div>
+					<div class="worker-controls">
+						<span class="label">job order</span>
+						@rankControl(csrf, v.DeviceID, farm.RankName(ranks[v.DeviceID]), next)
+					</div>
+				}
+				<div class="gauges">
+					<span class="label">cpu</span>
+					if v.CPU != nil {
+						<progress max="100" value={ cpuValue(v) }></progress>
+						<span class="mono">{ cpuValue(v) }%</span>
+					} else {
+						<progress max="100" value="0"></progress>
+						<span class="mono muted">—</span>
+					}
+					<span class="label">jobs</span>
+					<div class="slots">
+						for _, id := range slots(v) {
+							if id == 0 {
+								<span class="slot" title="Free slot"></span>
+							} else {
+								<a class="slot busy" href={ templ.SafeURL(jobURL(id)) } title={ fmt.Sprintf("Job %d", id) }>{ fmt.Sprint(id) }</a>
+							}
+						}
+					</div>
+					<span class="mono">{ fmt.Sprintf("%d/%d", len(v.Active), v.MaxJobs) }</span>
+				</div>
+				if v.Scheduler == "auto" {
+					<p class="meta">cpu target { fmt.Sprintf("%.0f%%", v.CPUTarget) } · headroom window { fmt.Sprint(v.Headroom) }s</p>
+				}
+				if v.Reason != "" {
+					<p class="reason">{ v.Reason }</p>
+				}
+				if fs := filesystemSummary(v.Filesystem); fs != "" {
+					<p class="meta">fuse { fs }</p>
+				}
+				@encoderTags(v.Encoders)
+				<p class="meta foot">
+					if s := versionSummary(v); s != "" {
+						<span>{ s }</span>
+					}
+					<span>
+						reported{ " " }
+						@when(v.Updated)
+					</span>
+				</p>
+			</article>
+		}
+	</div>
+}
+
+templ encoderTags(encoders []string) {
+	{{ hardware, software := splitEncoders(encoders) }}
+	<div class="tags">
+		for _, e := range hardware {
+			<span class="tag hw" title="Hardware encoder">{ e }</span>
+		}
+		if len(software) > 0 {
+			<details>
+				<summary class="tag">{ fmt.Sprintf("%d software encoders", len(software)) }</summary>
+				for _, e := range software {
+					<span class="tag">{ e }</span>
+				}
+			</details>
+		}
+	</div>
+}
+
+templ liveProgress(t *farm.JobTelemetry) {
+	<progress max="1" value={ fractionValue(t.Fraction) }>{ percent(t.Fraction) }</progress>
+	<p class="meta">
+		<strong>{ t.Phase }</strong>
+		if t.PassCount > 1 {
+			· pass { fmt.Sprintf("%d/%d", t.Pass, t.PassCount) }
+		}
+		· { percent(t.Fraction) } · { fps(t.FPS) } fps (avg { fps(t.AverageFPS) }) · eta { etaText(t.ETA) }
+		if staleTelemetry(t) {
+			<span class="badge s-stale" title="No progress report in the last 15 seconds">stale</span>
+		}
+	</p>
+}
+
+templ detailView(d pageData) {
+	{{ j := d.Detail.Job }}
+	<div class="card summary">
+		<div class="card-head">
+			@statusBadge(j.Status)
+			if retryable(j.Status) {
+				<form action={ templ.SafeURL(jobURL(j.ID) + "/retry") } method="post" data-confirm="Retry this job?">
+					<input type="hidden" name="csrf" value={ d.CSRF }/>
+					<button class="primary" id="retry-button">Retry job</button>
+				</form>
+			}
+		</div>
+		<dl class="kv">
+			<dt>source</dt>
+			<dd class="mono">{ j.Source } <span class="muted">{ byteSize(d.SrcSize) }</span></dd>
+			<dt>output</dt>
+			<dd class="mono">
+				{ j.Destination }
+				if d.OutSize >= 0 {
+					<span class="muted">{ byteSize(d.OutSize) }</span>
+					if c := sizeChange(d.SrcSize, d.OutSize); c != "" {
+						<strong>{ c }</strong>
+					}
+				}
+			</dd>
+			<dt>encoder</dt>
+			<dd><span class="tag">{ j.Encoder }</span></dd>
+			if j.Worker != "" {
+				<dt>worker</dt>
+				<dd class="mono">{ j.Worker }</dd>
+			}
+		</dl>
+		if j.Error != "" {
+			<p class="alert">{ j.Error }</p>
+		}
+	</div>
+	<h2>Attempts</h2>
+	if len(d.Detail.Attempts) == 0 {
+		<p class="empty">No attempts yet.</p>
+	}
+	for i, a := range d.Detail.Attempts {
+		<article class="card attempt">
+			<div class="card-head">
+				<h3>Attempt { fmt.Sprint(a.Number) }</h3>
+				@statusBadge(a.Status)
+				<span class="meta">
+					{ a.Worker } · started{ " " }
+					@when(a.Started)
+					if t := took(a.Started, a.Finished); t != "" {
+						{ " " }· took { t }
+					}
+					if a.Status != "running" && a.Telemetry != nil && a.Telemetry.AverageFPS != nil {
+						· avg { fps(a.Telemetry.AverageFPS) } fps
+					}
+				</span>
+			</div>
+			if a.Status == "running" && a.Telemetry != nil {
+				@liveProgress(a.Telemetry)
+			}
+			if a.Error != "" {
+				<p class="alert">{ a.Error }</p>
+			}
+			if a.Telemetry != nil {
+				if i == 0 {
+					@logView(a, true)
+				} else {
+					<details>
+						<summary class="meta">HandBrake log</summary>
+						@logView(a, false)
+					</details>
+				}
+			} else {
+				<p class="meta">Log not reported yet, or removed by retention.</p>
+			}
+		</article>
+	}
+	<h2>Events</h2>
+	<ol class="events">
+		for _, e := range d.Detail.Events {
+			<li>@when(e.At)<span class="mono">{ e.Kind }</span></li>
+		}
+	</ol>
+}
+
+templ logView(a farm.Attempt, tools bool) {
+	if tools {
+		<div class="log-tools" id="log-tools" hx-preserve="true">
+			<input id="log-search" type="search" placeholder="Filter log lines" aria-label="Filter log lines"/>
+			<label><input id="log-follow" type="checkbox"/> Follow</label>
+		</div>
+	}
+	<pre tabindex="0" class="log" id={ tailID(a.Number) } aria-label={ fmt.Sprintf("Attempt %d recent logs", a.Number) }>{ a.Telemetry.Tail }</pre>
+	<p class="meta">
+		Latest 64 KiB of output.
+		if a.Telemetry.Truncated {
+			Earlier output is in the attempt folder on the worker.
+		}
+	</p>
+}
+
+templ importView(csrf string, jobs []farm.Job, count int, message string, valid bool) {
+	@layout("Import", csrf) {
+		<div class="page-head"><h1>Import queue</h1></div>
+		<p class="lead">Upload a queue exported from HandBrake, review it, then submit. Media files stay where they are.</p>
+		<form class="card row" action="/import/preview" method="post" enctype="multipart/form-data">
+			<input type="hidden" name="csrf" value={ csrf }/>
+			<label for="queue" class="grow">Queue JSON (maximum 64 MiB)<input type="file" id="queue" name="queue" accept=".json,application/json" required/></label>
+			<button>Preview queue</button>
+		</form>
+		if message != "" {
+			<p class="alert" role="alert">{ message }</p>
+		}
+		if len(jobs) > 0 {
+			<h2>Preview</h2>
+			<p class="count">
+				if valid {
+					{ fmt.Sprintf("%d jobs · %d new · %d duplicates", len(jobs), count, len(jobs)-count) }
+				} else {
+					{ fmt.Sprintf("%d parsed jobs · validation failed", len(jobs)) }
+				}
+			</p>
+			@previewTable(jobs)
+		}
+		if valid {
+			<form class="submit-row" action="/import" method="post">
+				<input type="hidden" name="csrf" value={ csrf }/>
+				<button class="primary">Submit queue</button>
+				<span class="meta">Validation runs again on submit. The import is all or nothing.</span>
+			</form>
+		}
+	}
+}
+
+templ previewTable(jobs []farm.Job) {
+	<div class="table-wrap">
+		<table>
+			<thead><tr><th>Source</th><th>Output</th><th>Encoder</th></tr></thead>
+			<tbody>
+				for _, j := range jobs {
+					<tr>
+						<td>@fileCell(j, false)</td>
+						<td>
+							<div class="file" title={ j.Destination }>
+								<strong>{ baseName(j.Destination) }</strong>
+								<small>{ dirName(j.Destination) }</small>
+							</div>
+						</td>
+						<td><span class="tag">{ j.Encoder }</span></td>
+					</tr>
+				}
+			</tbody>
+		</table>
+	</div>
+}
+
+templ devicesView(csrf string, devices []farm.Device, pairing *farm.Pairing) {
+	@layout("Devices", csrf) {
+		<div class="page-head"><h1>Devices</h1></div>
+		<p class="lead">Pair workers, browsers and operator CLIs. Revoking a device takes effect on its next request.</p>
+		if pairing != nil {
+			<div class="card pairing" role="status">
+				<p class="meta">{ pairing.Role } pairing code:</p>
+				<p class="pair-code">{ pairing.Code }</p>
+				<p class="meta">Expires in 10 minutes and works once. Enter it in <code>transcoop setup</code> or on the pairing page.</p>
+			</div>
+		}
+		<form class="card row" method="post" action="/devices/pair">
+			<input type="hidden" name="csrf" value={ csrf }/>
+			<label>Device type<select name="role"><option value="worker">Worker</option><option value="browser">Browser</option><option value="operator">Operator CLI</option></select></label>
+			<button class="primary">Create pairing code</button>
+		</form>
+		<div class="table-wrap">
+			<table>
+				<thead><tr><th>Name</th><th>Role</th><th>State</th><th class="hide-sm">Last seen</th><th></th></tr></thead>
+				<tbody>
+					for _, d := range devices {
+						<tr>
+							<td><strong>{ d.Name }</strong></td>
+							<td class="mono">{ deviceRole(d.Role) }</td>
+							<td>@statusBadge(deviceState(d))</td>
+							<td class="hide-sm">@when(d.LastSeen)</td>
+							<td class="actions">
+								if d.Role != "admin" && !d.Revoked {
+									<form method="post" action="/devices/revoke" data-confirm={ "Revoke " + d.Name + "? It will need a new pairing code." }>
+										<input type="hidden" name="csrf" value={ csrf }/>
+										<input type="hidden" name="id" value={ d.ID }/>
+										<button class="danger small">Revoke</button>
+									</form>
+								}
+								if d.Role == "admin" {
+									<span class="meta">managed on the coordinator</span>
+								}
+							</td>
+						</tr>
+					}
+				</tbody>
+			</table>
+		</div>
+	}
+}
+
+templ executionControls(csrf, deviceID, state, next string) {
+	<form class="seg" action="/controls" method="post" aria-label={ "Execution state: " + state }>
+		<input type="hidden" name="csrf" value={ csrf }/>
+		<input type="hidden" name="device" value={ deviceID }/>
+		<input type="hidden" name="next" value={ next }/>
+		<button name="action" value="play" aria-pressed={ fmt.Sprint(state == "playing") } disabled?={ state == "playing" } title="Play: start new jobs">▶ play</button>
+		<button name="action" value="pause" aria-pressed={ fmt.Sprint(state == "paused") } disabled?={ state == "paused" } title="Pause: let active jobs finish, start nothing new">❚❚ pause</button>
+		<button name="action" value="stop" aria-pressed={ fmt.Sprint(state == "stopped") } disabled?={ state == "stopped" } title="Stop: interrupt active jobs within 15 seconds; retry them to restart" data-confirm="Stop accepting new jobs and interrupt active jobs? Interrupted jobs must be retried to restart.">■ stop</button>
+	</form>
+}
+
+templ rankControl(csrf, deviceID, rank, next string) {
+	<form class="seg rank" action="/workers/rank" method="post" aria-label={ "Job order: " + rank }>
+		<input type="hidden" name="csrf" value={ csrf }/>
+		<input type="hidden" name="device" value={ deviceID }/>
+		<input type="hidden" name="next" value={ next }/>
+		<button name="rank" value="first" aria-pressed={ fmt.Sprint(rank == "first") } disabled?={ rank == "first" } title="First: idle workers ranked lower wait up to 30 seconds so this one gets the job">▲ first</button>
+		<button name="rank" value="normal" aria-pressed={ fmt.Sprint(rank == "normal") } disabled?={ rank == "normal" } title="Normal: whichever worker asks first">normal</button>
+		<button name="rank" value="last" aria-pressed={ fmt.Sprint(rank == "last") } disabled?={ rank == "last" } title="Last: takes a job only when higher-ranked workers are busy, paused or offline">▼ last</button>
+	</form>
+}

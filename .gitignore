@@ -1,0 +1,15 @@
+/bin/
+/data/
+/worker-data/
+/logs/
+/hb-jobs/
+/output/
+/handbrake-queue.json
+*.db
+*.db-shm
+*.db-wal
+.env
+.env.*
+/out1/
+*.credentials.json
+__pycache__/

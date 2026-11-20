@@ -1,0 +1,101 @@
+JSON Title Set: {
+  "TitleList": [
+    {
+      "Index": 1,
+      "AudioList": [
+        {
+          "Attributes": {
+            "AltCommentary": false,
+            "Commentary": false,
+            "Default": true,
+            "Normal": false,
+            "Secondary": false,
+            "VisuallyImpaired": false
+          },
+          "BitRate": 640000,
+          "ChannelCount": 6,
+          "ChannelLayout": "5.1(side)",
+          "Codec": 2048,
+          "CodecName": "ac3",
+          "CodecParam": 86019,
+          "Description": "English (AC3, 5.1 ch, 640 kbps)",
+          "LFECount": 1,
+          "Language": "English",
+          "LanguageCode": "eng",
+          "Name": "Surround 5.1",
+          "SampleRate": 48000,
+          "TrackNumber": 1
+        },
+        {
+          "Attributes": {
+            "AltCommentary": false,
+            "Commentary": false,
+            "Default": false,
+            "Normal": false,
+            "Secondary": false,
+            "VisuallyImpaired": false
+          },
+          "BitRate": 256000,
+          "ChannelCount": 2,
+          "ChannelLayout": "stereo",
+          "Codec": 2048,
+          "CodecName": "ac3",
+          "CodecParam": 86019,
+          "Description": "English (AC3, 2.0 ch, 256 kbps)",
+          "LFECount": 0,
+          "Language": "English",
+          "LanguageCode": "eng",
+          "Name": "Stereo",
+          "SampleRate": 48000,
+          "TrackNumber": 2
+        },
+        {
+          "Attributes": {
+            "AltCommentary": false,
+            "Commentary": false,
+            "Default": false,
+            "Normal": false,
+            "Secondary": false,
+            "VisuallyImpaired": false
+          },
+          "BitRate": 1,
+          "ChannelCount": 2,
+          "ChannelLayout": "stereo",
+          "Codec": 262144,
+          "CodecName": "dca",
+          "CodecParam": 86020,
+          "Description": "\u65e5\u672c\u8a9e (DTS-HD MA, 2.0 ch)",
+          "LFECount": 0,
+          "Language": "\u65e5\u672c\u8a9e",
+          "LanguageCode": "jpn",
+          "Name": "Stereo",
+          "SampleRate": 48000,
+          "TrackNumber": 3
+        },
+        {
+          "Attributes": {
+            "AltCommentary": false,
+            "Commentary": false,
+            "Default": false,
+            "Normal": false,
+            "Secondary": false,
+            "VisuallyImpaired": false
+          },
+          "BitRate": 256000,
+          "ChannelCount": 2,
+          "ChannelLayout": "stereo",
+          "Codec": 8192,
+          "CodecName": "dca",
+          "CodecParam": 86020,
+          "Description": "\u65e5\u672c\u8a9e (DTS, 2.0 ch, 256 kbps)",
+          "LFECount": 0,
+          "Language": "\u65e5\u672c\u8a9e",
+          "LanguageCode": "jpn",
+          "Name": "Stereo",
+          "SampleRate": 48000,
+          "TrackNumber": 4
+        }
+      ]
+    }
+  ]
+}

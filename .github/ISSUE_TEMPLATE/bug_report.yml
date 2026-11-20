@@ -1,0 +1,44 @@
+name: Bug report
+description: Something is broken or behaves unexpectedly
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: What did you do, what did you expect, and what happened instead?
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Transcoop version
+      description: Output of `transcoop version` on the affected machines.
+    validations:
+      required: true
+  - type: input
+    id: handbrake
+    attributes:
+      label: HandBrakeCLI version
+      description: Output of `HandBrakeCLI --version`.
+  - type: dropdown
+    id: role
+    attributes:
+      label: Affected component
+      options: [Coordinator, Worker, Browser console, Track review TUI, Setup, Other]
+  - type: dropdown
+    id: mode
+    attributes:
+      label: Worker storage mode
+      options: [shared, transfer, fuse, Not applicable]
+  - type: input
+    id: os
+    attributes:
+      label: Operating systems
+      description: e.g. coordinator on Debian 13, worker on Windows 11.
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs
+      description: From logs/serve.log, logs/worker.log or the job's handbrake.log. Remove anything private, such as media paths.
+      render: text

@@ -1,0 +1,126 @@
+package webui
+
+import "fmt"
+
+templ watchView(d watchData) {
+	@layout("Watch folders", d.CSRF) {
+		<div class="page-head">
+			<h1>Watch folders</h1>
+			if len(d.Rows) > 0 {
+				<form action="/watch/scan" method="post">
+					<input type="hidden" name="csrf" value={ d.CSRF }/>
+					<button class="small">Scan now</button>
+				</form>
+			}
+		</div>
+		<p class="lead">Drop videos into a watched folder, from any machine that can reach the share, and they are queued with the folder’s preset. Folders are checked every 30 seconds; a video is queued once it has stopped changing for a minute. Sources are never moved or deleted.</p>
+		if d.Message != "" {
+			<p class="notice" role="status">{ d.Message }</p>
+		}
+		if !d.Running {
+			<p class="warning">The folder watcher is not running in this process.</p>
+		}
+		<div id="poll-status" role="status"></div>
+		@watchList(d)
+		<h2>New watch</h2>
+		<form class="card media-settings stack watch-form" action="/watch" method="post">
+			<input type="hidden" name="csrf" value={ d.CSRF }/>
+			<label for="watch-source">Watched folder<input id="watch-source" class="mono" name="source" value={ d.Form.Source } required placeholder="/mnt/media/inbox"/></label>
+			<label for="watch-output">Output folder<input id="watch-output" class="mono" name="output" value={ d.Form.Output } required placeholder="/mnt/media/encoded"/></label>
+			<label for="watch-preset">
+				Preset
+				<select id="watch-preset" name="preset" required>
+					if len(d.Custom) > 0 {
+						<optgroup label="Uploaded">
+							for _, name := range d.Custom {
+								<option value={ name } selected?={ name == d.Form.Preset }>{ name }</option>
+							}
+						</optgroup>
+					}
+					<optgroup label="HandBrake">
+						for _, name := range d.Presets {
+							<option value={ name } selected?={ name == d.Form.Preset }>{ name }</option>
+						}
+					</optgroup>
+				</select>
+			</label>
+			<label><input type="checkbox" name="recursive" checked?={ d.Form.Recursive }/> Include subfolders (the layout is kept in the output folder)</label>
+			<label><input type="checkbox" name="existing"/> Also queue videos already in the folder</label>
+			<button class="primary" disabled?={ len(d.Presets)+len(d.Custom) == 0 }>Start watching</button>
+			<p class="meta">Paths are on the coordinator. With subfolders off, the output folder may sit inside the watched folder (for example <code>inbox/done</code>).</p>
+		</form>
+	}
+}
+
+templ watchList(d watchData) {
+	<section id="live" hx-get="/watch" hx-trigger="every 5s" hx-swap="outerHTML" aria-label="Watched folders">
+		if len(d.Rows) == 0 {
+			<p class="empty">No watched folders yet.</p>
+		}
+		<div class="grid watches">
+			for _, w := range d.Rows {
+				<article class="card watch">
+					<div class="card-head">
+						<h3 class="mono" title={ w.Source }>{ baseName(w.Source) }/</h3>
+						@statusBadge(w.State())
+					</div>
+					<dl class="kv">
+						<dt>watch</dt>
+						<dd class="mono">
+							{ w.Source }
+							if w.Recursive {
+								<span class="muted">+ subfolders</span>
+							}
+						</dd>
+						<dt>output</dt>
+						<dd class="mono">{ w.Output }</dd>
+						<dt>preset</dt>
+						<dd><span class="tag">{ w.Preset }</span></dd>
+					</dl>
+					<p class="meta counts">
+						<span><strong>{ fmt.Sprint(w.Summary.Counts["queued"]) }</strong> queued</span>
+						<span>{ fmt.Sprint(w.Summary.Counts["skipped"]) } skipped</span>
+						if n := w.Summary.Counts["failed"]; n > 0 {
+							<span class="error">{ fmt.Sprint(n) } failed</span>
+						}
+						if w.Status.Waiting > 0 {
+							<span>{ fmt.Sprint(w.Status.Waiting) } settling</span>
+						}
+						if w.Scanned {
+							<span>
+								scanned{ " " }
+								@when(w.Status.LastScan.Unix())
+							</span>
+						}
+					</p>
+					if w.Status.Error != "" {
+						<p class="alert">{ w.Status.Error }</p>
+					}
+					if len(w.Summary.Recent) > 0 {
+						<ul class="watch-files">
+							for _, f := range w.Summary.Recent {
+								<li title={ f.Path }>
+									@statusBadge(f.Result)
+									<span class="name">{ baseName(f.Path) }</span>
+									if f.Detail != "" {
+										<span class="meta">{ firstLine(f.Detail) }</span>
+									}
+								</li>
+							}
+						</ul>
+					}
+					<div class="row actions">
+						<form action={ templ.SafeURL(fmt.Sprintf("/watch/%d/%s", w.ID, watchToggle(w.Enabled))) } method="post">
+							<input type="hidden" name="csrf" value={ d.CSRF }/>
+							<button class="small">{ watchToggle(w.Enabled) }</button>
+						</form>
+						<form action={ templ.SafeURL(fmt.Sprintf("/watch/%d/delete", w.ID)) } method="post" data-confirm={ "Stop watching " + w.Source + "? Queued jobs and files are kept." }>
+							<input type="hidden" name="csrf" value={ d.CSRF }/>
+							<button class="small danger">Remove</button>
+						</form>
+					</div>
+				</article>
+			}
+		</div>
+	</section>
+}
